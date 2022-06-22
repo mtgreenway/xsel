@@ -60,7 +60,9 @@ static Atom incr_atom; /* The INCR atom */
 static Atom null_atom; /* The NULL atom */
 static Atom text_atom; /* The TEXT atom */
 static Atom utf8_atom; /* The UTF8 atom */
+static Atom text_html_atom; /* The UTF8 atom */
 static Atom compound_text_atom; /* The COMPOUND_TEXT atom */
+static Atom chromium; /* The chromium/x-web-custom-data atom */
 
 /* Number of selection targets served by this.
  * (MULTIPLE, INCR, TARGETS, TIMESTAMP, DELETE, TEXT, UTF8_STRING and STRING)
@@ -252,6 +254,8 @@ get_atom_name (Atom atom)
   if (atom == null_atom) return "NULL";
   if (atom == text_atom) return "TEXT";
   if (atom == utf8_atom) return "UTF8_STRING";
+  if (atom == text_html_atom) return "text/html";
+  if (atom == chromium) return "chromium/x-web-custom-data";
 
   ret = XGetAtomName (display, atom);
   strncpy (atom_name, ret, MAXLINE+1);
@@ -734,6 +738,7 @@ wait_selection (Atom selection, Atom request_target)
                                         *(long *)value);
           keep_waiting = False;
         } else if (target != utf8_atom && target != XA_STRING &&
+                   target != text_html_atom &&
                    target != compound_text_atom &&
                    request_target != delete_atom) {
           /* Report non-TEXT atoms */
@@ -828,12 +833,12 @@ get_selection_text (Atom selection)
 {
   unsigned char * retval;
 
-  if ((retval = get_selection (selection, utf8_atom)) == NULL)
+  if ((retval = get_selection (selection, text_html_atom)) == NULL)
+  //if ((retval = get_selection (selection, utf8_atom)) == NULL)
     retval = get_selection (selection, XA_STRING);
 
   return retval;
 }
-
 
 /*
  * SELECTION SETTING
@@ -1442,6 +1447,40 @@ handle_string (Display * display, Window requestor, Atom property,
 }
 
 /*
+ * handle_string (display, requestor, property, sel)
+ *
+ * Handle a STRING request; setting 'sel' as the data
+ */
+static HandleResult
+handle_text_html (Display * display, Window requestor, Atom property,
+               unsigned char * sel, Atom selection, Time time,
+               MultTrack * mparent)
+{
+  return
+    change_property (display, requestor, property, text_html_atom, 8,
+                     PropModeReplace, sel, xs_strlen(sel),
+                     selection, time, mparent);
+}
+
+/*
+ * handle_string (display, requestor, property, sel)
+ *
+ * Handle a STRING request; setting 'sel' as the data
+ */
+static HandleResult
+handle_chromium (Display * display, Window requestor, Atom property,
+               unsigned char * sel, Atom selection, Time time,
+               MultTrack * mparent)
+{
+  return
+    change_property (display, requestor, property, chromium, 8,
+                     PropModeReplace, sel, xs_strlen(sel),
+                     selection, time, mparent);
+}
+
+
+
+/*
  * handle_utf8_string (display, requestor, property, sel)
  *
  * Handle a UTF8_STRING request; setting 'sel' as the data
@@ -1500,6 +1539,9 @@ process_multiple (MultTrack * mt, Bool do_parent)
     } else if (mt->atoms[i] == multiple_atom) {
       retval |= handle_multiple (mt->display, mt->requestor, mt->atoms[i+1],
                                  mt->sel, mt->selection, mt->time, mt);
+     } else if (mt->atoms[i] == text_html_atom) {
+      retval |= handle_text_html (mt->display, mt->requestor, mt->atoms[i+1],
+                               mt->sel, mt->selection, mt->time, mt);
     } else if (mt->atoms[i] == XA_STRING || mt->atoms[i] == text_atom) {
       retval |= handle_string (mt->display, mt->requestor, mt->atoms[i+1],
                                mt->sel, mt->selection, mt->time, mt);
@@ -1686,6 +1728,15 @@ handle_selection_request (XEvent event, unsigned char * sel)
     ev.property = xsr->property;
     hr = handle_utf8_string (ev.display, ev.requestor, ev.property, sel,
                              ev.selection, ev.time, NULL);
+  } else if (ev.target == chromium) {
+    ev.property = xsr->property;
+    hr = handle_chromium(ev.display, ev.requestor, ev.property, sel,
+                             ev.selection, ev.time, NULL);
+  } else if (ev.target == text_html_atom) {
+    ev.property = xsr->property;
+    hr = handle_text_html(ev.display, ev.requestor, ev.property, sel,
+                             ev.selection, ev.time, NULL);
+
   } else if (ev.target == delete_atom) {
     /* Received DELETE request */
     ev.property = xsr->property;
@@ -2144,7 +2195,7 @@ main(int argc, char *argv[])
   }
 
   if (show_version) {
-    printf ("xsel version " VERSION " by " AUTHOR "\n");
+    printf ("xsel version by \n");
   }
 
   if (show_help) {
@@ -2257,14 +2308,24 @@ main(int argc, char *argv[])
   supported_targets[s++] = text_atom;
   NUM_TARGETS++;
 
+  /* Get the text/html atom */
+  text_html_atom = XInternAtom (display, "text/html", False);
+  supported_targets[s++] = text_html_atom;
+  NUM_TARGETS++;
+
+  /* Get the chromium atom */
+  chromium = XInternAtom (display, "chromium/x-web-custom-data", False);
+  supported_targets[s++] = chromium;
+  NUM_TARGETS++;
+
   /* Get the UTF8_STRING atom */
-  utf8_atom = XInternAtom (display, "UTF8_STRING", True);
-  if(utf8_atom != None) {
-    supported_targets[s++] = utf8_atom;
-    NUM_TARGETS++;
-  } else {
-    utf8_atom = XA_STRING;
-  }
+  //utf8_atom = XInternAtom (display, "UTF8_STRING", True);
+  //if(utf8_atom != None) {
+  //  supported_targets[s++] = utf8_atom;
+  //  NUM_TARGETS++;
+  //} else {
+  //  utf8_atom = XA_STRING;
+ // }
 
   supported_targets[s++] = XA_STRING;
   NUM_TARGETS++;
